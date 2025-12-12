@@ -23,13 +23,12 @@ import {
 // These should be customized for your specific user/team
 
 /** Jira username or accountId for "my" queries */
-const CURRENT_USER: string = 'currentuser()';
+const CURRENT_USER: string = process.env.JIRA_CURRENT_USER || 'currentuser()';
 
-/** Array of team member usernames or accountIds */
-const TEAM_MEMBERS: string[] = [
-  'joey.mcdonald@wiz.io',
-  'hossein.panahi@wiz.io',
-];
+/** Array of team member usernames or accountIds (comma-separated in env var) */
+const TEAM_MEMBERS: string[] = process.env.JIRA_TEAM_MEMBERS
+  ? process.env.JIRA_TEAM_MEMBERS.split(',').map(m => m.trim())
+  : [];
 
 // ============ Server Setup ============
 

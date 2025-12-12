@@ -52,17 +52,8 @@ The server requires the following environment variables:
 | `JIRA_BASE_URL` | Your Jira instance base URL | `https://your-org.atlassian.net` |
 | `JIRA_USER_EMAIL` | Your Jira account email | `user@example.com` |
 | `JIRA_API_TOKEN` | Jira API token ([Generate here](https://id.atlassian.com/manage-profile/security/api-tokens)) | `ATATT3xFfGF0...` |
-
-### Team Configuration
-
-To use team activity features, edit `src/index.ts` and update the `TEAM_MEMBERS` array:
-
-```typescript
-const TEAM_MEMBERS: string[] = [
-  'teammate1@example.com',
-  'teammate2@example.com',
-];
-```
+| `JIRA_CURRENT_USER` | (Optional) Override current user for queries | `currentuser()` |
+| `JIRA_TEAM_MEMBERS` | (Optional) Comma-separated list of team member emails | `user1@example.com,user2@example.com` |
 
 ## Usage
 
@@ -89,7 +80,8 @@ Add the server to your MCP client configuration:
       "env": {
         "JIRA_BASE_URL": "https://your-org.atlassian.net",
         "JIRA_USER_EMAIL": "your-email@example.com",
-        "JIRA_API_TOKEN": "your-api-token"
+        "JIRA_API_TOKEN": "your-api-token",
+        "JIRA_TEAM_MEMBERS": "teammate1@example.com,teammate2@example.com"
       }
     }
   }
