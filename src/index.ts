@@ -89,7 +89,7 @@ server.registerTool(
   },
   async () => {
     try {
-      const jql = `assignee = ${CURRENT_USER} AND resolution = Unresolved ORDER BY updated DESC`;
+      const jql = `assignee = ${CURRENT_USER} AND status != Done ORDER BY updated DESC`;
       const issues = await searchIssues(jql);
       const output = { issues };
       return {
