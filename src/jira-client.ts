@@ -9,6 +9,9 @@ const JIRA_BASE_URL = process.env.JIRA_BASE_URL;
 const JIRA_USER_EMAIL = process.env.JIRA_USER_EMAIL;
 const JIRA_API_TOKEN = process.env.JIRA_API_TOKEN;
 
+// Cache for current user's accountId
+let currentUserAccountId: string | null = null;
+
 // ============ Types ============
 
 export interface JiraIssue {
@@ -155,6 +158,20 @@ async function jiraFetch<T>(
 }
 
 /**
+ * Get the current user's accountId from Jira
+ * Results are cached to avoid repeated API calls
+ */
+async function getCurrentUserAccountId(): Promise<string> {
+  if (currentUserAccountId) {
+    return currentUserAccountId;
+  }
+
+  const response = await jiraFetch<{ accountId: string }>('/myself');
+  currentUserAccountId = response.accountId;
+  return currentUserAccountId;
+}
+
+/**
  * Extracts plain text from Jira's ADF (Atlassian Document Format)
  */
 function extractTextFromADF(adf: unknown): string {
@@ -176,6 +193,31 @@ function extractTextFromADF(adf: unknown): string {
 }
 
 // ============ API Functions ============
+
+export interface ProjectComponent {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+/**
+ * Get all components for a project
+ * @param projectKey - The project key (e.g., "TSSE")
+ * @returns Array of components with id, name, and description
+ */
+export async function getProjectComponents(projectKey: string): Promise<ProjectComponent[]> {
+  const response = await jiraFetch<Array<{
+    id: string;
+    name: string;
+    description?: string;
+  }>>(`/project/${projectKey}/components`);
+
+  return response.map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description,
+  }));
+}
 
 /**
  * Search for issues using JQL (using the new /search/jql endpoint)
@@ -310,6 +352,161 @@ export async function addComment(issueKey: string, commentBody: string): Promise
   return {
     id: response.id,
     created: response.created,
+  };
+}
+
+// ============ Issue Creation ============
+
+export interface CreateIssueOptions {
+  projectKey: string;
+  issueType: string;
+  summary: string;
+  description?: string;
+  assignee?: string; // 'currentuser()' or accountId
+  priority?: string;
+  labels?: string[];
+  duedate?: string; // YYYY-MM-DD format
+  components?: string[]; // Component names
+  // Custom fields
+  healthStatus?: string;
+  completionPercentage?: number;
+  decisionNeeded?: string;
+  risksBlockers?: string;
+  // Progress Update field sections
+  progressUpdate?: {
+    weeklyUpdate?: string;
+    delivered?: string;
+    whatsNext?: string;
+  };
+  // Any additional custom fields as key-value pairs
+  customFields?: Record<string, unknown>;
+}
+
+export interface CreateIssueResult {
+  key: string;
+  id: string;
+  self: string;
+}
+
+/**
+ * Create a new issue in Jira
+ * @param options - Issue creation options including project, type, summary, and optional fields
+ * @returns The created issue key, id, and self URL
+ */
+export async function createIssue(options: CreateIssueOptions): Promise<CreateIssueResult> {
+  const isTSSEProject = options.projectKey.toUpperCase() === 'TSSE';
+
+  const fields: Record<string, unknown> = {
+    project: { key: options.projectKey },
+    issuetype: { name: options.issueType },
+    summary: options.summary,
+  };
+
+  // Add description if provided
+  if (options.description) {
+    fields.description = createADFDocument(options.description);
+  }
+
+  // Add assignee - default to currentuser() for TSSE project
+  const assignee = options.assignee ?? (isTSSEProject ? 'currentuser()' : undefined);
+  if (assignee) {
+    // Handle 'currentuser()' or accountId
+    if (assignee.toLowerCase() === 'currentuser()') {
+      // Fetch actual accountId for current user (Jira Cloud requires accountId)
+      const accountId = await getCurrentUserAccountId();
+      fields.assignee = { accountId };
+    } else {
+      fields.assignee = { accountId: assignee };
+    }
+  }
+
+  // Add priority if provided
+  if (options.priority) {
+    fields.priority = { name: options.priority };
+  }
+
+  // Add labels - default to ['EngProd', 'TSSP'] for TSSE project
+  const labels = options.labels ?? (isTSSEProject ? ['EngProd', 'TSSP'] : undefined);
+  if (labels && labels.length > 0) {
+    fields.labels = labels;
+  }
+
+  // Add duedate - default to 30 days from today for TSSE project
+  let duedate = options.duedate;
+  if (!duedate && isTSSEProject) {
+    const date = new Date();
+    date.setDate(date.getDate() + 30);
+    duedate = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+  }
+  if (duedate) {
+    fields.duedate = duedate;
+  }
+
+  // Add components if provided
+  if (options.components && options.components.length > 0) {
+    fields.components = options.components.map(name => ({ name }));
+  }
+
+  // Add custom fields
+  if (options.healthStatus) {
+    fields[resolveFieldId('Health Status')] = { value: options.healthStatus };
+  }
+
+  // BUG FIX: Completion Percentage field expects decimal (0.0-1.0), not percentage (0-100)
+  // Convert percentage input to decimal: 10% -> 0.10
+  if (options.completionPercentage !== undefined) {
+    const decimalValue = options.completionPercentage / 100;
+    fields[resolveFieldId('Completion Percentage')] = decimalValue;
+  }
+
+  if (options.decisionNeeded) {
+    fields[resolveFieldId('Decision Needed')] = createADFDocument(options.decisionNeeded);
+  }
+
+  if (options.risksBlockers) {
+    fields[resolveFieldId('Risks/Blockers')] = createADFDocument(options.risksBlockers);
+  }
+
+  // Add Progress Update field if provided
+  if (options.progressUpdate) {
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    const weeklyUpdate = options.progressUpdate.weeklyUpdate || '';
+    const delivered = options.progressUpdate.delivered || '';
+    const whatsNext = options.progressUpdate.whatsNext || '';
+
+    fields[resolveFieldId('Progress Update')] = createProgressUpdateADF(
+      `${currentDate}\n${weeklyUpdate}`,
+      delivered,
+      whatsNext
+    );
+  }
+
+  // Add any additional custom fields
+  if (options.customFields) {
+    for (const [key, value] of Object.entries(options.customFields)) {
+      const fieldId = key.startsWith('customfield_') ? key : resolveFieldId(key);
+      fields[fieldId] = value;
+    }
+  }
+
+  const response = await jiraFetch<{
+    id: string;
+    key: string;
+    self: string;
+  }>('/issue', {
+    method: 'POST',
+    body: JSON.stringify({ fields }),
+  });
+
+  return {
+    key: response.key,
+    id: response.id,
+    self: response.self,
   };
 }
 
@@ -541,6 +738,10 @@ export async function updateIssueField(
       if (isNaN(formattedValue as number)) {
         throw new Error(`Invalid number value for ${fieldName}: ${value}`);
       }
+      // Special handling for Completion Percentage: convert percentage (0-100) to decimal (0.0-1.0)
+      if (fieldId === 'customfield_15116') {
+        formattedValue = (formattedValue as number) / 100;
+      }
       break;
     case 'select':
       // Select fields need to be set with { value: "option" } format
@@ -564,6 +765,28 @@ export async function updateIssueField(
   });
 
   return { success: true, fieldId, fieldName };
+}
+
+/**
+ * Update labels on an issue
+ * @param issueKey - The Jira issue key (e.g., "PROJ-123")
+ * @param labels - Array of label strings to set on the issue
+ * @returns Object indicating success
+ */
+export async function updateIssueLabels(
+  issueKey: string,
+  labels: string[]
+): Promise<{ success: boolean }> {
+  await jiraFetch<void>(`/issue/${issueKey}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      fields: {
+        labels: labels,
+      },
+    }),
+  });
+
+  return { success: true };
 }
 
 /**

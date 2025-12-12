@@ -11,6 +11,8 @@ import {
   searchIssues,
   getIssueDetails,
   addComment,
+  createIssue,
+  getProjectComponents,
   getWorkSummary,
   getTeamActivity,
   updateIssueField,
@@ -331,6 +333,54 @@ server.registerTool(
 );
 
 /**
+ * Tool: get_project_components
+ * Get all components for a Jira project
+ */
+server.registerTool(
+  'get_project_components',
+  {
+    title: 'Get Project Components',
+    description: 'Get all available components for a Jira project',
+    inputSchema: {
+      projectKey: z.string().describe('The project key (e.g., "TSSE")'),
+    },
+    outputSchema: {
+      components: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+      })).optional(),
+      error: z.object({
+        message: z.string(),
+        statusCode: z.number().optional(),
+        details: z.unknown().optional(),
+      }).optional(),
+    },
+  },
+  async ({ projectKey }) => {
+    try {
+      if (!projectKey || !projectKey.trim()) {
+        throw new Error('projectKey is required');
+      }
+
+      const components = await getProjectComponents(projectKey);
+      const output = { components };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const errOutput = formatError(error);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(errOutput, null, 2) }],
+        structuredContent: errOutput,
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
  * Tool: update_issue_field
  * Update a custom field on a Jira issue
  */
@@ -439,6 +489,99 @@ Options:
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         structuredContent: result,
+      };
+    } catch (error) {
+      const output = { success: false, ...formatError(error) };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output,
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: create_issue
+ * Create a new issue in Jira with support for custom fields
+ */
+server.registerTool(
+  'create_issue',
+  {
+    title: 'Create Issue',
+    description: `Create a new issue in Jira. Supports standard fields (summary, description, assignee, priority, labels) and custom fields (Health Status, Completion Percentage, Progress Update, etc.)`,
+    inputSchema: {
+      projectKey: z.string().describe('The project key (e.g., "TSSE")'),
+      issueType: z.string().describe('The issue type (e.g., "Epic", "Story", "Task", "Bug")'),
+      summary: z.string().describe('Issue summary/title'),
+      description: z.string().optional().describe('Issue description (plain text)'),
+      assignee: z.string().optional().describe('Assignee accountId or "currentuser()" for current user'),
+      priority: z.string().optional().describe('Priority name (e.g., "High", "Medium", "Low")'),
+      labels: z.array(z.string()).optional().describe('Array of labels to apply'),
+      duedate: z.string().optional().describe('Due date in YYYY-MM-DD format'),
+      components: z.array(z.string()).optional().describe('Array of component names'),
+      healthStatus: z.string().optional().describe('Health Status value (e.g., "On Track", "At Risk", "Off Track")'),
+      completionPercentage: z.number().optional().describe('Completion percentage (0-100)'),
+      decisionNeeded: z.string().optional().describe('Decision Needed field content'),
+      risksBlockers: z.string().optional().describe('Risks/Blockers field content'),
+      progressUpdate: z.object({
+        weeklyUpdate: z.string().optional().describe('Weekly update content'),
+        delivered: z.string().optional().describe('What was delivered'),
+        whatsNext: z.string().optional().describe('What is next'),
+      }).optional().describe('Progress Update field with three sections'),
+      customFields: z.record(z.unknown()).optional().describe('Additional custom fields as key-value pairs (e.g., {"customfield_14707": [{"value": "Data"}]})'),
+    },
+    outputSchema: {
+      success: z.boolean(),
+      key: z.string().optional(),
+      id: z.string().optional(),
+      self: z.string().optional(),
+      error: z.object({
+        message: z.string(),
+        statusCode: z.number().optional(),
+        details: z.unknown().optional(),
+      }).optional(),
+    },
+  },
+  async ({ projectKey, issueType, summary, description, assignee, priority, labels, duedate, components, healthStatus, completionPercentage, decisionNeeded, risksBlockers, progressUpdate, customFields }) => {
+    try {
+      if (!projectKey || !projectKey.trim()) {
+        throw new Error('projectKey is required');
+      }
+      if (!issueType || !issueType.trim()) {
+        throw new Error('issueType is required');
+      }
+      if (!summary || !summary.trim()) {
+        throw new Error('summary is required');
+      }
+
+      const result = await createIssue({
+        projectKey,
+        issueType,
+        summary,
+        description,
+        assignee,
+        priority,
+        labels,
+        duedate,
+        components,
+        healthStatus,
+        completionPercentage,
+        decisionNeeded,
+        risksBlockers,
+        progressUpdate,
+        customFields: customFields as Record<string, unknown> | undefined,
+      });
+
+      const output = {
+        success: true,
+        key: result.key,
+        id: result.id,
+        self: result.self,
+      };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output,
       };
     } catch (error) {
       const output = { success: false, ...formatError(error) };
