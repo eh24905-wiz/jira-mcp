@@ -17,6 +17,7 @@ import {
   getTeamActivity,
   updateIssueField,
   updateProgressField,
+  getSprintTasks,
   CUSTOM_FIELD_MAP,
   JiraApiError,
 } from './jira-client.js';
@@ -585,6 +586,69 @@ server.registerTool(
       };
     } catch (error) {
       const output = { success: false, ...formatError(error) };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output,
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: get_sprint_tasks
+ * Get sprint tasks for the current week or next week
+ */
+server.registerTool(
+  'get_sprint_tasks',
+  {
+    title: 'Get Sprint Tasks',
+    description: `Retrieve Sprint tasks for the current week or next week. Sprint tasks are tagged with labels in the format MonDD-DD (e.g., Dec15-19 for December 15-19).
+
+Two query modes:
+- my_tasks: Retrieve tasks assigned to the current authenticated user for the specified week
+- team_tasks: Retrieve all tasks for the team for the specified week (regardless of assignee)
+
+The tool automatically calculates the Monday-Friday date range and matches against the corresponding sprint label.`,
+    inputSchema: {
+      week: z.enum(['this_week', 'next_week']).describe('Which week to retrieve sprint tasks for'),
+      scope: z.enum(['my_tasks', 'team_tasks']).describe('Scope of tasks: "my_tasks" for current user only, "team_tasks" for all team tasks'),
+    },
+    outputSchema: {
+      sprintLabel: z.string().optional().describe('The sprint label used for the query (e.g., "Dec15-19")'),
+      weekRange: z.object({
+        monday: z.string(),
+        friday: z.string(),
+      }).optional().describe('The date range for the sprint week'),
+      tasks: z.array(z.object({
+        key: z.string(),
+        summary: z.string(),
+        status: z.string(),
+        priority: z.string(),
+        assignee: z.string().optional(),
+        updated: z.string(),
+      })).optional(),
+      error: z.object({
+        message: z.string(),
+        statusCode: z.number().optional(),
+        details: z.unknown().optional(),
+      }).optional(),
+    },
+  },
+  async ({ week, scope }) => {
+    try {
+      const result = await getSprintTasks(week, scope, CURRENT_USER);
+      const output = {
+        sprintLabel: result.sprintLabel,
+        weekRange: result.weekRange,
+        tasks: result.tasks,
+      };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const output = formatError(error);
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
         structuredContent: output,

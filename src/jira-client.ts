@@ -942,6 +942,138 @@ function parseProgressUpdateADF(adf: unknown): {
   return result;
 }
 
+// ============ Sprint Tasks Functions ============
+
+/**
+ * Month abbreviations for sprint label format (MonDD-DD)
+ */
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Calculates the Monday-Friday date range for a given week and returns the sprint label format.
+ * Sprint labels follow the format: MonDD-DD (e.g., Dec15-19 for December 15-19)
+ *
+ * @param weekOffset - 0 for current week, 1 for next week
+ * @returns Object containing the sprint label and the Monday/Friday dates
+ */
+export function calculateSprintLabel(weekOffset: number = 0): {
+  label: string;
+  mondayDate: Date;
+  fridayDate: Date;
+} {
+  const now = new Date();
+
+  // Find Monday of the current week
+  const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const daysUntilMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // If Sunday, go back 6 days
+
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + daysUntilMonday + (weekOffset * 7));
+  monday.setHours(0, 0, 0, 0);
+
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+  friday.setHours(23, 59, 59, 999);
+
+  const month = MONTH_ABBR[monday.getMonth()];
+  const mondayDay = monday.getDate();
+  const fridayDay = friday.getDate();
+
+  // Format: MonDD-DD (e.g., Dec15-19)
+  // If the week spans two months, still use the Monday's month
+  const label = `${month}${mondayDay}-${fridayDay}`;
+
+  return { label, mondayDate: monday, fridayDate: friday };
+}
+
+export interface SprintTask {
+  key: string;
+  summary: string;
+  status: string;
+  priority: string;
+  assignee?: string;
+  updated: string;
+}
+
+export interface SprintTasksResult {
+  sprintLabel: string;
+  weekRange: {
+    monday: string;
+    friday: string;
+  };
+  tasks: SprintTask[];
+}
+
+/**
+ * Get sprint tasks for the current week or next week
+ *
+ * @param week - 'this_week' or 'next_week'
+ * @param scope - 'my_tasks' for current user's tasks, 'team_tasks' for all team tasks
+ * @param currentUser - The current user identifier (for 'my_tasks' scope)
+ * @returns Sprint tasks result with label, date range, and matching tasks
+ */
+export async function getSprintTasks(
+  week: 'this_week' | 'next_week',
+  scope: 'my_tasks' | 'team_tasks',
+  currentUser?: string
+): Promise<SprintTasksResult> {
+  const weekOffset = week === 'this_week' ? 0 : 1;
+  const { label, mondayDate, fridayDate } = calculateSprintLabel(weekOffset);
+
+  // Build JQL query to find issues with the sprint label
+  let jql = `labels = "${label}"`;
+
+  // Filter by assignee if scope is 'my_tasks'
+  if (scope === 'my_tasks') {
+    if (!currentUser) {
+      throw new Error('currentUser is required for my_tasks scope');
+    }
+    jql += ` AND assignee = ${currentUser}`;
+  }
+
+  // Order by priority then status
+  jql += ' ORDER BY priority DESC, status ASC';
+
+  // Search for issues with the matching label
+  const params = new URLSearchParams({
+    jql,
+    maxResults: '100',
+  });
+  ['summary', 'status', 'priority', 'assignee', 'updated'].forEach(f => params.append('fields', f));
+
+  const response = await jiraFetch<{
+    issues: Array<{
+      key: string;
+      id: string;
+      fields: {
+        summary: string;
+        status: { name: string };
+        priority: { name: string };
+        assignee?: { displayName: string; accountId: string };
+        updated: string;
+      };
+    }>;
+  }>(`/search/jql?${params.toString()}`);
+
+  const tasks: SprintTask[] = response.issues.map((issue) => ({
+    key: issue.key,
+    summary: issue.fields.summary,
+    status: issue.fields.status.name,
+    priority: issue.fields.priority?.name || 'None',
+    assignee: issue.fields.assignee?.displayName,
+    updated: issue.fields.updated,
+  }));
+
+  return {
+    sprintLabel: label,
+    weekRange: {
+      monday: mondayDate.toISOString().split('T')[0],
+      friday: fridayDate.toISOString().split('T')[0],
+    },
+    tasks,
+  };
+}
+
 /**
  * Update the Progress Update field with template-aware behavior
  *
