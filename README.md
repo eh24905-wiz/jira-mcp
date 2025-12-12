@@ -13,8 +13,11 @@ This MCP server provides the following tools:
 | `add_comment` | Add a comment to a specified Jira issue |
 | `get_my_work_summary` | Get a summary of issues you've worked on within a date range |
 | `get_team_activity` | Get recent issue updates from configured team members |
+| `get_project_components` | Get all available components for a Jira project |
 | `update_issue_field` | Update supported custom fields on a Jira issue |
 | `update_progress` | Update the Progress Update field with template-aware behavior |
+| `create_issue` | Create a new issue in Jira with support for custom fields |
+| `get_sprint_tasks` | Retrieve sprint tasks for the current week or next week |
 
 ## Prerequisites
 
@@ -189,6 +192,61 @@ The Progress Update field uses a structured template:
 - ℹ️ **Update for week of [date]:** - Weekly status
 - ✅ **What we've delivered so far:** - Accomplishments
 - ❓ **What's next:** - Upcoming work
+
+---
+
+### get_project_components
+
+Get all available components for a Jira project.
+
+**Parameters:**
+- `projectKey` (string, required): The project key (e.g., "TSSE")
+
+**Returns:** `{ components: [{ id: string, name: string, description?: string }] }`
+
+---
+
+### create_issue
+
+Create a new issue in Jira with support for standard and custom fields.
+
+**Parameters:**
+- `projectKey` (string, required): The project key (e.g., "TSSE")
+- `issueType` (string, required): The issue type (e.g., "Epic", "Story", "Task", "Bug")
+- `summary` (string, required): Issue summary/title
+- `description` (string, optional): Issue description (plain text)
+- `assignee` (string, optional): Assignee accountId or "currentuser()" for current user
+- `priority` (string, optional): Priority name (e.g., "High", "Medium", "Low")
+- `labels` (string[], optional): Array of labels to apply
+- `duedate` (string, optional): Due date in YYYY-MM-DD format
+- `components` (string[], optional): Array of component names
+- `healthStatus` (string, optional): Health Status value (e.g., "On Track", "At Risk", "Off Track")
+- `completionPercentage` (number, optional): Completion percentage (0-100)
+- `decisionNeeded` (string, optional): Decision Needed field content
+- `risksBlockers` (string, optional): Risks/Blockers field content
+- `progressUpdate` (object, optional): Progress Update with `weeklyUpdate`, `delivered`, `whatsNext`
+- `customFields` (object, optional): Additional custom fields as key-value pairs
+
+**Returns:** `{ success: boolean, key: string, id: string, self: string }`
+
+---
+
+### get_sprint_tasks
+
+Retrieve sprint tasks for the current week or next week. Sprint tasks are tagged with labels in the format MonDD-DD (e.g., Dec15-19 for December 15-19).
+
+**Parameters:**
+- `week` (enum, required): Which week to retrieve - `"this_week"` or `"next_week"`
+- `scope` (enum, required): Scope of tasks - `"my_tasks"` for current user only, `"team_tasks"` for all team tasks
+
+**Returns:**
+```json
+{
+  "sprintLabel": "Dec15-19",
+  "weekRange": { "monday": "2024-12-15", "friday": "2024-12-19" },
+  "tasks": [{ "key": "PROJ-123", "summary": "...", "status": "...", "priority": "...", "assignee": "...", "updated": "..." }]
+}
+```
 
 ## Development
 
