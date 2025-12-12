@@ -1,0 +1,233 @@
+# Jira MCP Server
+
+A Model Context Protocol (MCP) server for Jira integration, enabling AI assistants to interact with Jira issues, comments, and custom fields through a standardized interface.
+
+## Features
+
+This MCP server provides the following tools:
+
+| Tool | Description |
+|------|-------------|
+| `get_my_issues` | Get all issues currently assigned to you |
+| `get_issue_details` | Get full details of a specific Jira issue |
+| `add_comment` | Add a comment to a specified Jira issue |
+| `get_my_work_summary` | Get a summary of issues you've worked on within a date range |
+| `get_team_activity` | Get recent issue updates from configured team members |
+| `update_issue_field` | Update supported custom fields on a Jira issue |
+| `update_progress` | Update the Progress Update field with template-aware behavior |
+
+## Prerequisites
+
+- **Node.js**: v18.0.0 or higher
+- **npm**: v8.0.0 or higher
+- **Jira Cloud Account**: With API access enabled
+- **Jira API Token**: Generated from your Atlassian account
+
+## Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd jira-mcp
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Build the project:**
+   ```bash
+   npm run build
+   ```
+
+## Configuration
+
+### Environment Variables
+
+The server requires the following environment variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `JIRA_BASE_URL` | Your Jira instance base URL | `https://your-org.atlassian.net` |
+| `JIRA_USER_EMAIL` | Your Jira account email | `user@example.com` |
+| `JIRA_API_TOKEN` | Jira API token ([Generate here](https://id.atlassian.com/manage-profile/security/api-tokens)) | `ATATT3xFfGF0...` |
+
+### Team Configuration
+
+To use team activity features, edit `src/index.ts` and update the `TEAM_MEMBERS` array:
+
+```typescript
+const TEAM_MEMBERS: string[] = [
+  'teammate1@example.com',
+  'teammate2@example.com',
+];
+```
+
+## Usage
+
+### Starting the Server
+
+```bash
+# Production
+npm start
+
+# Development (with hot reload)
+npm run dev
+```
+
+### MCP Client Configuration
+
+Add the server to your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "jira": {
+      "command": "node",
+      "args": ["/path/to/jira-mcp/dist/index.js"],
+      "env": {
+        "JIRA_BASE_URL": "https://your-org.atlassian.net",
+        "JIRA_USER_EMAIL": "your-email@example.com",
+        "JIRA_API_TOKEN": "your-api-token"
+      }
+    }
+  }
+}
+```
+
+## Supported Custom Fields
+
+The following custom fields can be updated using `update_issue_field`:
+
+| Field Name | Field ID | Type | Description |
+|------------|----------|------|-------------|
+| Decision Needed | `customfield_15111` | Rich text (ADF) | Flag if a decision is required |
+| Progress Update | `customfield_15112` | Rich text (ADF) | Weekly progress status |
+| Decision Maker(s) | `customfield_15113` | User picker | Person responsible for decisions |
+| Risks/Blockers | `customfield_15115` | Rich text (ADF) | Current risks or blockers |
+| Completion Percentage | `customfield_15116` | Number | Progress percentage (0-100) |
+| Health Status | `customfield_15117` | Select | Project health (On Track, At Risk, etc.) |
+
+## API Reference
+
+### get_my_issues
+
+Returns all unresolved issues assigned to the current user.
+
+**Parameters:** None
+
+**Returns:** Array of issues with `key`, `summary`, `status`, `priority`, `updated`
+
+---
+
+### get_issue_details
+
+Get full details of a specific issue.
+
+**Parameters:**
+- `issueKey` (string, required): The issue key (e.g., "PROJ-123")
+
+**Returns:** Issue object with `key`, `summary`, `description`, `status`, `priority`, `assignee`, `reporter`, `created`, `updated`, `comments`
+
+---
+
+### add_comment
+
+Add a comment to an issue.
+
+**Parameters:**
+- `issueKey` (string, required): The issue key
+- `commentBody` (string, required): The comment text
+
+**Returns:** `{ success: boolean, commentId: string, created: string }`
+
+---
+
+### get_my_work_summary
+
+Get issues you've worked on within a date range.
+
+**Parameters:**
+- `startDate` (string, required): Start date in YYYY-MM-DD format
+- `endDate` (string, required): End date in YYYY-MM-DD format
+
+**Returns:** Array of issues with activity type
+
+---
+
+### get_team_activity
+
+Get recent updates from team members.
+
+**Parameters:**
+- `timeframeDays` (number, optional): Days to look back (default: 7)
+
+**Returns:** Array of activity items with `issueKey`, `teamMember`, `activityType`, `timestamp`, `summary`
+
+---
+
+### update_issue_field
+
+Update a custom field on an issue.
+
+**Parameters:**
+- `issueKey` (string, required): The issue key
+- `fieldNameOrId` (string, required): Field name or ID
+- `value` (string | number | object, required): Value to set
+
+**Returns:** `{ success: boolean, fieldId: string, fieldName: string }`
+
+---
+
+### update_progress
+
+Update the Progress Update field with template awareness.
+
+**Parameters:**
+- `issueKey` (string, required): The issue key
+- `refreshDate` (boolean, optional): Update date only, preserve content
+- `weeklyUpdate` (string, optional): Weekly update text
+- `delivered` (string, optional): What was delivered
+- `whatsNext` (string, optional): Upcoming work
+
+**Returns:** `{ success: boolean, updatedSections: string[], parsedExisting: object }`
+
+The Progress Update field uses a structured template:
+- ℹ️ **Update for week of [date]:** - Weekly status
+- ✅ **What we've delivered so far:** - Accomplishments
+- ❓ **What's next:** - Upcoming work
+
+## Development
+
+### Building
+
+```bash
+npm run build
+```
+
+### Project Structure
+
+```
+jira-mcp/
+├── src/
+│   ├── index.ts        # MCP server entry point and tool definitions
+│   └── jira-client.ts  # Jira API client wrapper
+├── dist/               # Compiled JavaScript output
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
