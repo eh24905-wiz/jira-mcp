@@ -303,6 +303,17 @@ server.registerTool(
         created: z.string(),
         updated: z.string(),
       })).optional(),
+      project: z.object({
+        key: z.string(),
+        name: z.string(),
+      }).optional(),
+      parent: z.object({
+        key: z.string(),
+        summary: z.string(),
+        status: z.string(),
+        priority: z.string(),
+        issueType: z.string(),
+      }).optional(),
       error: z.object({
         message: z.string(),
         statusCode: z.number().optional(),
