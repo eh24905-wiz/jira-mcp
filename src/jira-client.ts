@@ -14,6 +14,14 @@ let currentUserAccountId: string | null = null;
 
 // ============ Types ============
 
+export interface JiraIssueParent {
+  key: string;
+  summary: string;
+  status: string;
+  priority: string;
+  issueType: string;
+}
+
 export interface JiraIssue {
   key: string;
   summary: string;
@@ -25,6 +33,11 @@ export interface JiraIssue {
   reporter?: string;
   created?: string;
   comments?: JiraComment[];
+  project?: {
+    key: string;
+    name: string;
+  };
+  parent?: JiraIssueParent;
 }
 
 export interface JiraComment {
@@ -268,7 +281,7 @@ export async function searchIssues(jql: string, fields: string[] = ['summary', '
  * @returns Complete issue details including description, comments, and metadata
  */
 export async function getIssueDetails(issueKey: string): Promise<JiraIssue> {
-  const fields = ['summary', 'status', 'priority', 'updated', 'description', 'assignee', 'reporter', 'created', 'comment'];
+  const fields = ['summary', 'status', 'priority', 'updated', 'description', 'assignee', 'reporter', 'created', 'comment', 'project', 'parent'];
   const params = new URLSearchParams({
     fields: fields.join(','),
   });
@@ -293,6 +306,19 @@ export async function getIssueDetails(issueKey: string): Promise<JiraIssue> {
           updated: string;
         }>;
       };
+      project?: {
+        key: string;
+        name: string;
+      };
+      parent?: {
+        key: string;
+        fields: {
+          summary: string;
+          status: { name: string };
+          priority: { name: string };
+          issuetype: { name: string };
+        };
+      };
     };
   }>(`/issue/${issueKey}?${params.toString()}`);
 
@@ -303,6 +329,17 @@ export async function getIssueDetails(issueKey: string): Promise<JiraIssue> {
     created: c.created,
     updated: c.updated,
   })) || [];
+
+  // Build parent object if present
+  const parent: JiraIssueParent | undefined = response.fields.parent
+    ? {
+        key: response.fields.parent.key,
+        summary: response.fields.parent.fields.summary,
+        status: response.fields.parent.fields.status.name,
+        priority: response.fields.parent.fields.priority?.name || 'None',
+        issueType: response.fields.parent.fields.issuetype.name,
+      }
+    : undefined;
 
   return {
     key: response.key,
@@ -315,6 +352,8 @@ export async function getIssueDetails(issueKey: string): Promise<JiraIssue> {
     reporter: response.fields.reporter?.displayName,
     created: response.fields.created,
     comments,
+    project: response.fields.project,
+    parent,
   };
 }
 
