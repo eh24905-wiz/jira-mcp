@@ -352,7 +352,9 @@ export async function getIssueDetails(issueKey: string): Promise<JiraIssue> {
     reporter: response.fields.reporter?.displayName,
     created: response.fields.created,
     comments,
-    project: response.fields.project,
+    project: response.fields.project
+      ? { key: response.fields.project.key, name: response.fields.project.name }
+      : undefined,
     parent,
   };
 }
