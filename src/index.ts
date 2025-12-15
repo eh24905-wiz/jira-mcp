@@ -275,6 +275,74 @@ server.registerTool(
 );
 
 /**
+ * Tool: search_issues
+ * Search for issues using JQL (Jira Query Language)
+ */
+server.registerTool(
+  'search_issues',
+  {
+    title: 'Search Issues',
+    description: 'Search for issues using JQL (Jira Query Language). Use this to find issues by parent/epic, assignee, status, labels, or any other criteria. Example JQL: "parent=TSSE-206", "assignee=currentuser() AND status=\"In Progress\"", "labels=Dec15-19"',
+    inputSchema: {
+      jql: z.string().describe('JQL query string (e.g., "parent=EPIC-123", "project=TSSE AND status=\"To Do\"")'),
+      maxResults: z.number().optional().describe('Maximum number of results to return (default: 50, max: 100)'),
+    },
+    outputSchema: {
+      issues: z.array(z.object({
+        key: z.string(),
+        summary: z.string(),
+        status: z.string(),
+        priority: z.string(),
+        assignee: z.string().optional(),
+        updated: z.string(),
+      })).optional(),
+      total: z.number().optional(),
+      error: z.object({
+        message: z.string(),
+        statusCode: z.number().optional(),
+        details: z.unknown().optional(),
+      }).optional(),
+    },
+  },
+  async ({ jql, maxResults }) => {
+    try {
+      if (!jql || !jql.trim()) {
+        throw new Error('jql is required');
+      }
+
+      const issues = await searchIssues(jql, ['summary', 'status', 'priority', 'assignee', 'updated']);
+      
+      // Apply maxResults limit (default 50, max 100)
+      const limit = Math.min(maxResults || 50, 100);
+      const limitedIssues = issues.slice(0, limit);
+      
+      // Map to include assignee display name
+      const mappedIssues = limitedIssues.map(issue => ({
+        key: issue.key,
+        summary: issue.summary,
+        status: issue.status,
+        priority: issue.priority,
+        assignee: issue.assignee,
+        updated: issue.updated,
+      }));
+
+      const output = { issues: mappedIssues, total: issues.length };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const errOutput = formatError(error);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(errOutput, null, 2) }],
+        structuredContent: errOutput,
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
  * Tool: get_issue_details
  * Get full details of a specific Jira issue
  */

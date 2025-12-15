@@ -272,6 +272,7 @@ export async function searchIssues(jql: string, fields: string[] = ['summary', '
     status: issue.fields.status.name,
     priority: issue.fields.priority?.name || 'None',
     updated: issue.fields.updated,
+    assignee: issue.fields.assignee?.displayName,
   }));
 }
 
